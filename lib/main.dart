@@ -60,6 +60,14 @@ class _DrawPageState extends State<DrawPage> {
   String? _audioPath;
   bool _isRecording = false;
 
+  // 時間表示フォーマット
+  String _fmt(Duration d) {
+    final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final hh = d.inHours;
+    return hh > 0 ? '$hh:$mm:$ss' : '$mm:$ss';
+  }
+
   void _clear() {
     setState(() {
       _strokes.clear();
@@ -77,10 +85,10 @@ class _DrawPageState extends State<DrawPage> {
       return;
     }
     try {
-      // 録音停止（重複停止は無害）
+      // 先に録音停止
       await _stopRecordingIfNeeded();
 
-      // RepaintBoundary の描画完了を待つ保険（必要に応じて）
+      // RepaintBoundary の描画完了を待つ保険
       await Future.delayed(const Duration(milliseconds: 16));
 
       final boundary =
@@ -90,48 +98,151 @@ class _DrawPageState extends State<DrawPage> {
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       final bytes = byteData!.buffer.asUint8List();
 
-      if (!mounted) return;
+      // 音声ソースをセット（ある場合）
+      if (_audioPath != null) {
+        await _player.stop();
+        await _player.setSource(DeviceFileSource(_audioPath!));
+        await _player.setReleaseMode(ReleaseMode.stop);
+      }
 
-      bool isPlaying = false;
+      if (!mounted) return;
 
       await showDialog(
         context: context,
         builder: (_) => StatefulBuilder(
           builder: (ctx, setStateDialog) {
-            Future<void> _togglePlay() async {
+            Future<void> _togglePlay(PlayerState state) async {
               if (_audioPath == null) return;
-              if (!isPlaying) {
-                await _player.stop();
-                await _player.play(DeviceFileSource(_audioPath!));
-                isPlaying = true;
+              if (state == PlayerState.playing) {
+                await _player.pause();
               } else {
-                await _player.stop();
-                isPlaying = false;
+                await _player.resume(); // Source は事前に setSource 済み
               }
-              setStateDialog(() {});
             }
+
+            final screenH = MediaQuery.of(ctx).size.height;
+            final maxDialogH = screenH * 0.8; // ダイアログの最大高さ
 
             return AlertDialog(
               backgroundColor: const Color(0xFF2B2B2B),
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 24,
+              ),
               title: const Text('プレビュー'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.memory(bytes),
-                  const SizedBox(height: 12),
-                  if (_audioPath != null) ...[
-                    SelectableText(
-                      '音声ファイル: $_audioPath',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    const SizedBox(height: 8),
-                    ElevatedButton.icon(
-                      onPressed: _togglePlay,
-                      icon: Icon(isPlaying ? Icons.stop : Icons.play_arrow),
-                      label: Text(isPlaying ? '停止' : '再生'),
-                    ),
+              content: SizedBox(
+                // ★ListViewに確実な高さを与える（これがないと unbounded になりがち）
+                height: maxDialogH,
+                width: 720, // 任意の横幅上限（調整/削除可）
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  // ↓↓↓ 重要ポイント（安定化） ↓↓↓
+                  shrinkWrap: true,
+                  primary: false,
+                  children: [
+                    if (_audioPath != null) ...[
+                      // ===== 再生UI（先頭アイテム） =====
+                      StreamBuilder<PlayerState>(
+                        stream: _player.onPlayerStateChanged,
+                        initialData: PlayerState.stopped,
+                        builder: (context, stateSnap) {
+                          final state = stateSnap.data ?? PlayerState.stopped;
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            // 内側は Column（ネスト ListView 禁止）
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  children: [
+                                    IconButton(
+                                      onPressed: () => _togglePlay(state),
+                                      icon: Icon(
+                                        state == PlayerState.playing
+                                            ? Icons.pause
+                                            : Icons.play_arrow,
+                                      ),
+                                      tooltip: state == PlayerState.playing
+                                          ? '一時停止'
+                                          : '再生',
+                                    ),
+                                    Expanded(
+                                      child: StreamBuilder<Duration>(
+                                        stream: _player.onPositionChanged,
+                                        initialData: Duration.zero,
+                                        builder: (context, posSnap) {
+                                          final pos =
+                                              posSnap.data ?? Duration.zero;
+                                          return StreamBuilder<Duration?>(
+                                            stream: _player.onDurationChanged,
+                                            initialData: Duration.zero,
+                                            builder: (context, durSnap) {
+                                              final dur =
+                                                  durSnap.data ?? Duration.zero;
+                                              final maxMs =
+                                                  dur.inMilliseconds <= 0
+                                                  ? 1
+                                                  : dur.inMilliseconds;
+                                              final valMs = pos.inMilliseconds
+                                                  .clamp(0, maxMs);
+
+                                              return Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.stretch,
+                                                children: [
+                                                  Slider(
+                                                    value: valMs.toDouble(),
+                                                    min: 0,
+                                                    max: maxMs.toDouble(),
+                                                    onChanged:
+                                                        (
+                                                          double newValue,
+                                                        ) async {
+                                                          if (dur ==
+                                                              Duration.zero)
+                                                            return;
+                                                          final seekTo =
+                                                              Duration(
+                                                                milliseconds:
+                                                                    newValue
+                                                                        .toInt(),
+                                                              );
+                                                          await _player.seek(
+                                                            seekTo,
+                                                          );
+                                                        },
+                                                  ),
+                                                  Row(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .spaceBetween,
+                                                    children: [
+                                                      Text(_fmt(pos)),
+                                                      Text(_fmt(dur)),
+                                                    ],
+                                                  ),
+                                                ],
+                                              );
+                                            },
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+
+                    // ===== 画像（2個目のアイテム） =====
+                    // 画像が大きくても ListView 内なので必ずスクロール可能
+                    Image.memory(bytes, fit: BoxFit.contain),
                   ],
-                ],
+                ),
               ),
               actions: [
                 TextButton(
