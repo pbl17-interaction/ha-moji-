@@ -1,5 +1,5 @@
-import 'dart:math' as math;
-import 'dart:typed_data';
+//import 'dart:math' as math;
+//import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'dart:io';
 
@@ -49,7 +49,7 @@ class _DrawPageState extends State<DrawPage> {
   final GlobalKey _repaintKey = GlobalKey();
 
   // —— レイアウトパラメータ ——
-  static const double _marginFactor = 1.0;                 //正方形の大きさ
+  //static const double _marginFactor = 1.0;                 //正方形の大きさ
   static const double _borderRadius = 12.0;
   static const double _borderWidth = 9.0;
   static const double _penWidth = 6.0;
@@ -159,7 +159,7 @@ class _DrawPageState extends State<DrawPage> {
   @override
   Widget build(BuildContext context) {
     const double topSpace = 80.0; 
-    const double gap = 5.0;//文字と四角の距離
+    const double gap = 4.2;//文字と四角の距離
 
     // 【変更点1】Scaffoldで包み、下線トラブルを回避
     return Scaffold(
@@ -175,16 +175,18 @@ class _DrawPageState extends State<DrawPage> {
                 const _HintText('Enter text.'),
                 const SizedBox(height: gap),
 
-                // 正方形の描画エリア
+                // 長方形の描画エリア
                 Expanded(
                   child: Center(
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        final double side = math.min(constraints.maxWidth, constraints.maxHeight) * _marginFactor;
+                        //final double side = math.min(constraints.maxWidth, constraints.maxHeight) * _marginFactor;
+                        final double w = constraints.maxWidth*0.85;
+                        final double h = constraints.maxHeight*0.93;
 
                         return SizedBox(
-                          width: side,
-                          height: side,
+                          width: w,
+                          height: h,
                           child: RepaintBoundary(
                             key: _repaintKey,
                             child: Container(
@@ -200,9 +202,9 @@ class _DrawPageState extends State<DrawPage> {
                                 borderRadius: BorderRadius.circular(_borderRadius),
                                 child: Stack(
                                   children: [
-                                    Positioned.fill(
-                                      child: CustomPaint(painter: _GridPainter()),
-                                    ),
+                                    //Positioned.fill(
+                                    //child: CustomPaint(painter: _GridPainter()),
+                                    //),
                                     LayoutBuilder(
                                       builder: (context, c) {
                                         final Size paintSize = Size(c.maxWidth, c.maxHeight);
@@ -249,13 +251,13 @@ class _DrawPageState extends State<DrawPage> {
 
             // 2. 左上のClearボタン
             Positioned(
-              top: 16,
-              left: 38,
+              top: 18,
+              left: 26,
               child: OutlinedButton(
                 onPressed: _clear,
                 style: OutlinedButton.styleFrom(
                   shape: const CircleBorder(),
-                  padding: const EdgeInsets.all(38),                  //ボタンの大きさ
+                  padding: const EdgeInsets.all(25),                  //ボタンの大きさ
                   side: BorderSide.none, // 線をなしにする
                   foregroundColor: Colors.white,
                 ),
@@ -265,13 +267,13 @@ class _DrawPageState extends State<DrawPage> {
 
             // 3. 右上のDoneボタン
             Positioned(
-              top: 16,
-              right: 38,
+              top: 18,
+              right: 26,
               child: OutlinedButton(
                 onPressed: _confirm,
                 style: OutlinedButton.styleFrom(
                   shape: const CircleBorder(),
-                  padding: const EdgeInsets.all(38),
+                  padding: const EdgeInsets.all(25),
                   side: BorderSide.none,
                   //backgroundColor: Colors.white,
                   foregroundColor: Colors.white,
